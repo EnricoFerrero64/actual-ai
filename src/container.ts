@@ -7,7 +7,9 @@ import {
   anthropicApiKey,
   anthropicBaseURL,
   anthropicModel,
+  autoRuleConfidenceThreshold,
   budgetId,
+  classificationConcurrency,
   dataDir,
   e2ePassword,
   firecrawlApiKey,
@@ -151,6 +153,13 @@ if (searxngUrl) {
   console.log('[SearchEnrichment] SearXNG not configured (set SEARXNG_URL to enable)');
 }
 
+if (autoRuleConfidenceThreshold <= 1) {
+  console.log(`[AutoRule] Enabled — creating rules for classifications with confidence ≥ ${autoRuleConfidenceThreshold}`);
+}
+if (classificationConcurrency > 1) {
+  console.log(`[Parallel] Processing ${classificationConcurrency} transactions concurrently`);
+}
+
 const transactionProcessor = new TransactionProcessor(
   actualApiService,
   llmService,
@@ -159,11 +168,13 @@ const transactionProcessor = new TransactionProcessor(
   [ruleMatchStrategy, existingCategoryStrategy, newCategoryStrategy],
   searchEnrichment,
   searchConfidenceThreshold,
+  autoRuleConfidenceThreshold,
 );
 
 const batchTransactionProcessor = new BatchTransactionProcessor(
   transactionProcessor,
   20,
+  classificationConcurrency,
 );
 
 const transactionFilterer = new TransactionFilterer(tagService);

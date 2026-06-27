@@ -32,9 +32,14 @@ class CategorySuggester {
     uncategorizedTransactions: TransactionEntity[],
     categoryGroups: APICategoryGroupEntity[],
   ): Promise<void> {
-    // Optimize categories before applying/reporting
+    // Filter out suggestions that duplicate existing categories (semantic similarity)
+    const existingNames = categoryGroups.flatMap((g) => (g.categories ?? []).map((c) => c.name));
+    const deduped = this.categorySuggestionOptimizer
+      .filterAgainstExistingCategories(suggestedCategories, existingNames);
+
+    // Optimize (cluster similar suggestions within the run)
     const optimizedCategories = this.categorySuggestionOptimizer
-      .optimizeCategorySuggestions(suggestedCategories);
+      .optimizeCategorySuggestions(deduped);
 
     console.log(`Creating ${optimizedCategories.size} optimized categories`);
 

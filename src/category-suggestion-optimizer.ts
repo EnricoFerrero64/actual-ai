@@ -3,6 +3,9 @@ import type {
 } from '@actual-app/core/src/types/models';
 import SimilarityCalculator from './similarity-calculator';
 
+// Suggestions are dropped when they're this similar to an existing category name
+const EXISTING_CATEGORY_SIMILARITY_THRESHOLD = 0.75;
+
 class CategorySuggestionOptimizer {
   private readonly similarityCalculator: SimilarityCalculator;
 
@@ -10,6 +13,42 @@ class CategorySuggestionOptimizer {
     similarityCalculator: SimilarityCalculator,
   ) {
     this.similarityCalculator = similarityCalculator;
+  }
+
+  /**
+   * Remove suggestions that are too similar to already-existing category names,
+   * to prevent category bloat across runs.
+   */
+  public filterAgainstExistingCategories(
+    suggestedCategories: Map<string, {
+      name: string;
+      groupName: string;
+      groupIsNew: boolean;
+      groupId?: string;
+      transactions: TransactionEntity[];
+    }>,
+    existingCategoryNames: string[],
+  ): Map<string, {
+      name: string;
+      groupName: string;
+      groupIsNew: boolean;
+      groupId?: string;
+      transactions: TransactionEntity[];
+    }> {
+    if (!existingCategoryNames.length) return suggestedCategories;
+
+    const filtered = new Map(suggestedCategories);
+    for (const [key, suggestion] of filtered.entries()) {
+      const match = existingCategoryNames.find((existing) => {
+        const sim = this.similarityCalculator.calculateNameSimilarity(suggestion.name, existing);
+        return sim >= EXISTING_CATEGORY_SIMILARITY_THRESHOLD;
+      });
+      if (match) {
+        console.log(`[CategoryOptimizer] Dropping suggestion "${suggestion.name}" — too similar to existing category "${match}"`);
+        filtered.delete(key);
+      }
+    }
+    return filtered;
   }
 
   public optimizeCategorySuggestions(

@@ -57,6 +57,8 @@ export interface ActualApiServiceI {
   createCategoryGroup(name: string): Promise<string>
 
   updateCategoryGroup(id: string, name: string): Promise<void>
+
+  createPayeeRule(payeeId: string | undefined, importedPayeeName: string, categoryId: string): Promise<void>
 }
 
 export interface TransactionServiceI {

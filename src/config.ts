@@ -51,6 +51,18 @@ export const searchConfidenceThreshold = Number.isFinite(parsedConfidenceThresho
   ? Math.min(1, Math.max(0, parsedConfidenceThreshold))
   : 0.6;
 
+// Auto-rule creation — create Actual Budget rules for high-confidence classifications
+const parsedAutoRuleThreshold = parseFloat(process.env.AUTO_RULE_CONFIDENCE_THRESHOLD ?? '');
+export const autoRuleConfidenceThreshold = Number.isFinite(parsedAutoRuleThreshold)
+  ? Math.min(1, Math.max(0, parsedAutoRuleThreshold))
+  : 0.9;
+
+// Parallel classification — number of transactions processed concurrently
+const parsedConcurrency = parseInt(process.env.CLASSIFICATION_CONCURRENCY ?? '', 10);
+export const classificationConcurrency = Number.isFinite(parsedConcurrency) && parsedConcurrency > 0
+  ? parsedConcurrency
+  : 1;
+
 // Optional per-deployment overrides for LLM rate limits.
 // `null` → use provider default; `0` → disable that axis; `>0` → custom limit.
 export const requestsPerMinuteOverride = parseRateLimitEnv(

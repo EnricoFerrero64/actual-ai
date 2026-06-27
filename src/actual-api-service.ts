@@ -263,6 +263,29 @@ class ActualApiService implements ActualApiServiceI {
     }
     await this.actualApiClient.updateCategoryGroup(id, { name });
   }
+
+  public async createPayeeRule(
+    payeeId: string | undefined,
+    importedPayeeName: string,
+    categoryId: string,
+  ): Promise<void> {
+    if (this.isDryRun) {
+      console.log(`DRY RUN: Would create rule for payee "${importedPayeeName}" → category ${categoryId}`);
+      return;
+    }
+
+    // Prefer matching on clean payee entity; fall back to raw imported string
+    const condition = payeeId
+      ? { type: 'id', field: 'payee', op: 'is', value: payeeId }
+      : { type: 'string', field: 'imported_payee', op: 'contains', value: importedPayeeName };
+
+    await this.actualApiClient.createRule({
+      stage: null,
+      conditionsOp: 'and',
+      conditions: [condition],
+      actions: [{ type: 'id', field: 'category', op: 'set', value: categoryId }],
+    });
+  }
 }
 
 export default ActualApiService;
