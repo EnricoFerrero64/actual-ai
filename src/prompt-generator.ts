@@ -27,7 +27,11 @@ class PromptGenerator implements PromptGeneratorI {
   ): string {
     let template;
     try {
-      template = handlebars.compile(this.promptTemplate);
+      // noEscape: this is a plain-text prompt, not HTML. Without it Handlebars
+      // turns "&" into "&amp;" in category/payee names, which the model then
+      // mimics in its suggestions → near-duplicate categories that slip past
+      // the similarity dedup.
+      template = handlebars.compile(this.promptTemplate, { noEscape: true });
     } catch {
       console.error('Error generating prompt. Check syntax of your template.');
       throw new PromptTemplateException('Error generating prompt. Check syntax of your template.');

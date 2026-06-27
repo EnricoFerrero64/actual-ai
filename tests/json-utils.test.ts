@@ -37,4 +37,15 @@ describe('parseLlmResponse', () => {
     expect(result.type).toBe('new');
     expect(result.newCategory).toEqual({ name: 'Pets', groupName: 'Home', groupIsNew: true });
   });
+
+  it('decodes HTML entities in new-category names so they do not fork into duplicates', () => {
+    const result = parseLlmResponse(
+      '{"type": "new", "newCategory": {"name": "Travel &amp; Accommodation", "groupName": "Bills &amp; Utilities", "groupIsNew": false}, "confidence": 0.8}',
+    );
+    expect(result.newCategory).toEqual({
+      name: 'Travel & Accommodation',
+      groupName: 'Bills & Utilities',
+      groupIsNew: false,
+    });
+  });
 });

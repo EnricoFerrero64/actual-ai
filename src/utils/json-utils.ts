@@ -1,5 +1,18 @@
 import { UnifiedResponse } from '../types';
 
+// Defensive: decode common HTML entities that can leak into model output
+// (e.g. "&amp;" → "&"), so category names don't fork into near-duplicates.
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+}
+
 function cleanJsonResponse(text: string): string {
   // If the text looks like a UUID or simple ID, return it as is
   if (/^[a-zA-Z0-9_-]+$/.test(text.trim())) {
@@ -66,7 +79,11 @@ function parseLlmResponse(text: string): UnifiedResponse {
     if (parsed.type === 'new' && parsed.newCategory) {
       return {
         type: 'new',
-        newCategory: parsed.newCategory,
+        newCategory: {
+          ...parsed.newCategory,
+          name: decodeHtmlEntities(parsed.newCategory.name),
+          groupName: decodeHtmlEntities(parsed.newCategory.groupName),
+        },
         confidence,
       };
     }
