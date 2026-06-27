@@ -46,8 +46,12 @@ function parseLlmResponse(text: string): UnifiedResponse {
       throw new Error('Response is neither valid JSON nor simple ID');
     }
 
+    const confidence = typeof (parsed as any).confidence === 'number'
+      ? Math.min(1, Math.max(0, (parsed as any).confidence as number))
+      : undefined;
+
     if (parsed.type === 'existing' && parsed.categoryId) {
-      return { type: 'existing', categoryId: parsed.categoryId };
+      return { type: 'existing', categoryId: parsed.categoryId, confidence };
     }
     if (parsed.type === 'rule' && parsed.ruleName) {
       // categoryId is optional — a rule that says "leave uncategorized"
@@ -56,12 +60,14 @@ function parseLlmResponse(text: string): UnifiedResponse {
         type: 'rule',
         ...(parsed.categoryId ? { categoryId: parsed.categoryId } : {}),
         ruleName: parsed.ruleName,
+        confidence,
       };
     }
     if (parsed.type === 'new' && parsed.newCategory) {
       return {
         type: 'new',
         newCategory: parsed.newCategory,
+        confidence,
       };
     }
 

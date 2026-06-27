@@ -31,6 +31,11 @@ Existing Rules:
 {{/each}}
 {{/if}}
 
+{{#if searchContext}}
+MERCHANT RESEARCH (use this to improve accuracy):
+{{searchContext}}
+
+{{/if}}
 IMPORTANT: You MUST respond with ONLY a valid JSON object using this structure:
 {
   "type": "existing"|"new"|"rule",
@@ -40,18 +45,28 @@ IMPORTANT: You MUST respond with ONLY a valid JSON object using this structure:
     "name": "string",
     "groupName": "string",
     "groupIsNew": boolean
-  }
+  },
+  "confidence": 0.85 // Required: your confidence in this classification, from 0.0 (no idea) to 1.0 (certain)
 }
 
 If a rule renders as "→ leave uncategorized", that rule explicitly tells you NOT to assign a category. Match it with type "rule" and the ruleName, and OMIT categoryId — do not invent one and do not fall back to "new".
 
+Set confidence LOW (below 0.6) when:
+- The payee name is cryptic, abbreviated, or looks like an internal code
+- You are unsure whether to use an existing category or create a new one
+- The merchant is not well-known or the transaction purpose is ambiguous
+
+Set confidence HIGH (above 0.8) when:
+- The payee is a well-known brand/merchant you are certain about
+- The category match is obvious (e.g., supermarket → Groceries)
+
 DO NOT output any text before or after the JSON. Your entire response must be a valid, parsable JSON object.
 
 Examples:
-{"type": "existing", "categoryId": "abc123"}
-{"type": "rule", "categoryId": "def456", "ruleName": "Coffee Shop"}
-{"type": "rule", "ruleName": "Amazon leave uncategorized"}
-{"type": "new", "newCategory": {"name": "Pet Supplies", "groupName": "Pets", "groupIsNew": true}}
+{"type": "existing", "categoryId": "abc123", "confidence": 0.95}
+{"type": "rule", "categoryId": "def456", "ruleName": "Coffee Shop", "confidence": 1.0}
+{"type": "rule", "ruleName": "Amazon leave uncategorized", "confidence": 1.0}
+{"type": "new", "newCategory": {"name": "Pet Supplies", "groupName": "Pets", "groupIsNew": true}, "confidence": 0.7}
 
 {{#if hasWebSearchTool}}
 You can use the web search tool to find more information about the transaction.

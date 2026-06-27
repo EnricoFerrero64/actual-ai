@@ -10,6 +10,8 @@ import {
   budgetId,
   dataDir,
   e2ePassword,
+  firecrawlApiKey,
+  firecrawlUrl,
   getEnabledTools,
   googleApiKey,
   googleBaseURL,
@@ -36,10 +38,15 @@ import {
   password,
   promptTemplate,
   requestsPerMinuteOverride,
+  searchConfidenceThreshold,
+  searxngUrl,
   serverURL,
   tokensPerMinuteOverride,
   valueSerpApiKey,
 } from './config';
+import SearxngService from './utils/searxng-service';
+import FirecrawlService from './utils/firecrawl-service';
+import SearchEnrichmentService from './utils/search-enrichment-service';
 import ActualAiService from './actual-ai';
 import PromptGenerator from './prompt-generator';
 import LlmService from './llm-service';
@@ -134,12 +141,24 @@ const categorySuggester = new CategorySuggester(
 
 const newCategoryStrategy = new NewCategoryStrategy();
 
+const searxngService = searxngUrl ? new SearxngService(searxngUrl) : undefined;
+const firecrawlService = firecrawlUrl ? new FirecrawlService(firecrawlUrl, firecrawlApiKey) : undefined;
+const searchEnrichment = new SearchEnrichmentService(searxngService, firecrawlService);
+
+if (searxngUrl) {
+  console.log(`[SearchEnrichment] SearXNG enabled at ${searxngUrl} (confidence threshold: ${searchConfidenceThreshold})`);
+} else {
+  console.log('[SearchEnrichment] SearXNG not configured (set SEARXNG_URL to enable)');
+}
+
 const transactionProcessor = new TransactionProcessor(
   actualApiService,
   llmService,
   promptGenerator,
   tagService,
   [ruleMatchStrategy, existingCategoryStrategy, newCategoryStrategy],
+  searchEnrichment,
+  searchConfidenceThreshold,
 );
 
 const batchTransactionProcessor = new BatchTransactionProcessor(

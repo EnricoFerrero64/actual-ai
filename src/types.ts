@@ -97,6 +97,12 @@ export interface UnifiedResponse {
   categoryId?: string;
   ruleName?: string;
   newCategory?: CategorySuggestion;
+  confidence?: number; // 0.0–1.0, emitted by model when confidence-aware prompt is used
+}
+
+export interface SearchEnrichmentServiceI {
+  isAvailable(): boolean;
+  enrich(merchantName: string): Promise<string>;
 }
 
 export interface LlmServiceI {
@@ -115,6 +121,7 @@ export interface PromptGeneratorI {
     transaction: TransactionEntity,
     payees: APIPayeeEntity[],
     rules: RuleEntity[],
+    searchContext?: string,
   ): string;
 }
 

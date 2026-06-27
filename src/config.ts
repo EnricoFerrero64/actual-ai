@@ -42,6 +42,15 @@ export const groqModel = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
 export const groqBaseURL = process.env.GROQ_BASE_URL ?? 'https://api.groq.com/openai/v1';
 export const valueSerpApiKey = process.env.VALUESERP_API_KEY ?? '';
 
+// Search enrichment — confidence-based web search via SearXNG (+ optional Firecrawl)
+export const searxngUrl = process.env.SEARXNG_URL ?? '';
+export const firecrawlUrl = process.env.FIRECRAWL_URL ?? '';
+export const firecrawlApiKey = process.env.FIRECRAWL_API_KEY ?? '';
+const parsedConfidenceThreshold = parseFloat(process.env.SEARCH_CONFIDENCE_THRESHOLD ?? '');
+export const searchConfidenceThreshold = Number.isFinite(parsedConfidenceThreshold)
+  ? Math.min(1, Math.max(0, parsedConfidenceThreshold))
+  : 0.6;
+
 // Optional per-deployment overrides for LLM rate limits.
 // `null` → use provider default; `0` → disable that axis; `>0` → custom limit.
 export const requestsPerMinuteOverride = parseRateLimitEnv(
