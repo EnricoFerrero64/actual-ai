@@ -46,9 +46,9 @@ describe('SearchEnrichmentService', () => {
     expect(await svc.enrich('Boom')).toBe('');
   });
 
-  it('falls back to Firecrawl when snippets are too thin', async () => {
+  it('reads the top result with Firecrawl even when snippets are rich (complementary, not fallback)', async () => {
     const searxng = new SearxngService('http://searxng');
-    jest.spyOn(searxng, 'search').mockResolvedValue(makeResults(10));
+    jest.spyOn(searxng, 'search').mockResolvedValue(makeResults(200));
     const firecrawl = new FirecrawlService('http://firecrawl', '');
     const scrapeSpy = jest.spyOn(firecrawl, 'scrape').mockResolvedValue('Detailed scraped page about the merchant');
     const svc = new SearchEnrichmentService(searxng, firecrawl);
@@ -57,6 +57,22 @@ describe('SearchEnrichmentService', () => {
 
     expect(scrapeSpy).toHaveBeenCalledWith('https://example.com');
     expect(out).toContain('Detailed scraped page about the merchant');
+    // Other results still contribute their SearXNG snippets
+    expect(out).toContain('Second');
+  });
+
+  it('reads the top N results when maxScrapePages > 1', async () => {
+    const searxng = new SearxngService('http://searxng');
+    jest.spyOn(searxng, 'search').mockResolvedValue(makeResults(10));
+    const firecrawl = new FirecrawlService('http://firecrawl', '');
+    const scrapeSpy = jest.spyOn(firecrawl, 'scrape').mockResolvedValue('page body');
+    const svc = new SearchEnrichmentService(searxng, firecrawl, 2);
+
+    await svc.enrich('Cryptic Shop');
+
+    expect(scrapeSpy).toHaveBeenCalledTimes(2);
+    expect(scrapeSpy).toHaveBeenCalledWith('https://example.com');
+    expect(scrapeSpy).toHaveBeenCalledWith('https://second.com');
   });
 
   it('uses SearXNG snippets if Firecrawl scraping fails', async () => {

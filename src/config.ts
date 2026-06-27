@@ -46,6 +46,11 @@ export const valueSerpApiKey = process.env.VALUESERP_API_KEY ?? '';
 export const searxngUrl = process.env.SEARXNG_URL ?? '';
 export const firecrawlUrl = process.env.FIRECRAWL_URL ?? '';
 export const firecrawlApiKey = process.env.FIRECRAWL_API_KEY ?? '';
+// How many top search results Firecrawl reads (complements SearXNG, which finds them)
+const parsedFirecrawlMaxPages = parseInt(process.env.FIRECRAWL_MAX_PAGES ?? '', 10);
+export const firecrawlMaxPages = Number.isFinite(parsedFirecrawlMaxPages) && parsedFirecrawlMaxPages > 0
+  ? parsedFirecrawlMaxPages
+  : 1;
 const parsedConfidenceThreshold = parseFloat(process.env.SEARCH_CONFIDENCE_THRESHOLD ?? '');
 export const searchConfidenceThreshold = Number.isFinite(parsedConfidenceThreshold)
   ? Math.min(1, Math.max(0, parsedConfidenceThreshold))

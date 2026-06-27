@@ -14,6 +14,7 @@ import {
   dataDir,
   e2ePassword,
   firecrawlApiKey,
+  firecrawlMaxPages,
   firecrawlUrl,
   getEnabledTools,
   newCategoryConfidenceThreshold,
@@ -148,10 +149,17 @@ const newCategoryStrategy = new NewCategoryStrategy();
 
 const searxngService = searxngUrl ? new SearxngService(searxngUrl) : undefined;
 const firecrawlService = firecrawlUrl ? new FirecrawlService(firecrawlUrl, firecrawlApiKey) : undefined;
-const searchEnrichment = new SearchEnrichmentService(searxngService, firecrawlService);
+const searchEnrichment = new SearchEnrichmentService(
+  searxngService,
+  firecrawlService,
+  firecrawlMaxPages,
+);
 
 if (searxngUrl) {
-  console.log(`[SearchEnrichment] SearXNG enabled at ${searxngUrl} (confidence threshold: ${searchConfidenceThreshold})`);
+  const reader = firecrawlUrl
+    ? `Firecrawl reads top ${firecrawlMaxPages} result(s)`
+    : 'snippets only (set FIRECRAWL_URL to read full pages)';
+  console.log(`[SearchEnrichment] SearXNG finds at ${searxngUrl}; ${reader} (confidence threshold: ${searchConfidenceThreshold})`);
 } else {
   console.log('[SearchEnrichment] SearXNG not configured (set SEARXNG_URL to enable)');
 }

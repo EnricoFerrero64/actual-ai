@@ -25,9 +25,11 @@ This fork adds a **confidence-driven** classification pipeline on top of upstrea
 
 - **Confidence scoring** — the model emits a `confidence` (0.0–1.0) with every classification.
 - **Self-hosted search enrichment** — when confidence is low (or a transaction was previously missed),
-  the merchant is looked up via **SearXNG** (JSON API) and, optionally, scraped via **Firecrawl**.
-  The results are injected into the prompt and the transaction is re-classified. No model tool-calling
-  required, so it works with plain-JSON-only models.
+  the merchant is researched and the result injected into the prompt for re-classification.
+  **SearXNG** is the finder (returns the URLs + meta snippets) and **Firecrawl** is the reader
+  (scrapes the actual page content of the top result). They are complementary: when Firecrawl is
+  configured, the top result is read in full and the remaining SearXNG snippets are kept as extra
+  context. No model tool-calling required, so it works with plain-JSON-only models.
 - **Payee cache** — identical payees are classified once per run and reused (fewer LLM calls,
   consistent results).
 - **Auto-rule creation** — high-confidence classifications create a native Actual Budget rule
@@ -43,8 +45,9 @@ This fork adds a **confidence-driven** classification pipeline on top of upstrea
 |----------|---------|-------------|
 | `SEARXNG_URL` | _(empty)_ | Base URL of a SearXNG instance. Enables search enrichment when set. |
 | `SEARCH_CONFIDENCE_THRESHOLD` | `0.6` | Below this confidence, enrich with web search and re-classify. |
-| `FIRECRAWL_URL` | _(empty)_ | Optional Firecrawl base URL; scrapes the top result when SearXNG snippets are too thin. |
+| `FIRECRAWL_URL` | _(empty)_ | Optional Firecrawl base URL. When set, Firecrawl reads the full page content of the top SearXNG result(s). |
 | `FIRECRAWL_API_KEY` | _(empty)_ | Optional Firecrawl bearer token. |
+| `FIRECRAWL_MAX_PAGES` | `1` | How many of the top search results Firecrawl reads in full. |
 | `AUTO_RULE_CONFIDENCE_THRESHOLD` | `0.9` | At/above this confidence, create an Actual Budget rule. Set `> 1` to disable. |
 | `NEW_CATEGORY_CONFIDENCE_THRESHOLD` | `0.5` | Minimum confidence to accept a new-category suggestion; below it the transaction is a miss. |
 | `CLASSIFICATION_CONCURRENCY` | `1` | Number of transactions classified in parallel. |

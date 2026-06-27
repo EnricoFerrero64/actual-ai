@@ -2,17 +2,22 @@ import { SearchEnrichmentServiceI, SearchResult } from '../types';
 import SearxngService from './searxng-service';
 import FirecrawlService from './firecrawl-service';
 
-// If all snippets are shorter than this, try Firecrawl on the first URL
-const SNIPPET_THRESHOLD = 60;
+interface EnrichedResult extends SearchResult {
+  pageContent?: string;
+}
 
 export default class SearchEnrichmentService implements SearchEnrichmentServiceI {
   private readonly searxng?: SearxngService;
 
   private readonly firecrawl?: FirecrawlService;
 
-  constructor(searxng?: SearxngService, firecrawl?: FirecrawlService) {
+  // How many of the top search results to actually scrape with Firecrawl
+  private readonly maxScrapePages: number;
+
+  constructor(searxng?: SearxngService, firecrawl?: FirecrawlService, maxScrapePages = 1) {
     this.searxng = searxng;
     this.firecrawl = firecrawl;
+    this.maxScrapePages = Math.max(1, maxScrapePages);
   }
 
   public isAvailable(): boolean {
@@ -37,23 +42,48 @@ export default class SearchEnrichmentService implements SearchEnrichmentServiceI
       return 'No search results found for this merchant.';
     }
 
-    const avgSnippetLength = results.reduce((sum, r) => sum + r.snippet.length, 0) / results.length;
-    if (this.firecrawl && avgSnippetLength < SNIPPET_THRESHOLD && results[0]?.link) {
-      try {
-        console.log(`[SearchEnrichment] Snippets short (avg ${avgSnippetLength}), trying Firecrawl on: ${results[0].link}`);
-        const scraped = await this.firecrawl.scrape(results[0].link);
-        if (scraped) {
-          const rest = results.slice(1)
-            .map((r, i) => `[${i + 2}] ${r.title}\n${r.snippet.substring(0, 200)}\nURL: ${r.link}`)
-            .join('\n\n');
-          return `WEB SEARCH RESULTS:\n[1] ${results[0].title}\n${scraped}\nURL: ${results[0].link}`
-            + (rest ? `\n\n${rest}` : '');
-        }
-      } catch (err) {
-        console.warn('[SearchEnrichment] Firecrawl scrape failed, using SearXNG snippets:', err);
+    // SearXNG is the finder (URLs + thin meta snippets); Firecrawl is the reader
+    // (actual page content). They are complementary: when Firecrawl is configured
+    // we scrape the top result(s) to read what the page really says, and keep the
+    // remaining SearXNG snippets as extra context.
+    if (this.firecrawl) {
+      const enriched = await this.scrapeTopResults(results);
+      const hasPageContent = enriched.some((r) => r.pageContent);
+      if (hasPageContent) {
+        return SearchEnrichmentService.format(enriched);
       }
+      // All scrapes failed → fall through to snippet-only output
     }
 
     return this.searxng.formatResults(results);
+  }
+
+  private async scrapeTopResults(results: SearchResult[]): Promise<EnrichedResult[]> {
+    const toScrape = Math.min(this.maxScrapePages, results.length);
+    return Promise.all(
+      results.map(async (result, index): Promise<EnrichedResult> => {
+        if (index >= toScrape || !result.link || !this.firecrawl) {
+          return result;
+        }
+        try {
+          console.log(`[SearchEnrichment] Firecrawl reading: ${result.link}`);
+          const pageContent = await this.firecrawl.scrape(result.link);
+          return { ...result, pageContent: pageContent || undefined };
+        } catch (err) {
+          console.warn(`[SearchEnrichment] Firecrawl scrape failed for ${result.link}:`, err);
+          return result;
+        }
+      }),
+    );
+  }
+
+  private static format(results: EnrichedResult[]): string {
+    const blocks = results.map((r, i) => {
+      const body = r.pageContent
+        ? r.pageContent
+        : r.snippet.substring(0, 250);
+      return `[${i + 1}] ${r.title}\n${body}\nURL: ${r.link}`;
+    });
+    return `WEB SEARCH RESULTS:\n${blocks.join('\n\n')}`;
   }
 }
