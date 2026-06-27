@@ -50,6 +50,10 @@ class TransactionProcessor {
   // In-memory payee cache: normalized payee name → response
   private readonly payeeCache = new Map<string, UnifiedResponse>();
 
+  // Payee ids we've already created an auto-rule for — prevents duplicate rules
+  // when CLASSIFICATION_CONCURRENCY > 1 races two same-payee transactions.
+  private readonly ruledPayees = new Set<string>();
+
   constructor(
     actualApiClient: ActualApiServiceI,
     llmService: LlmServiceI,
@@ -185,9 +189,11 @@ class TransactionProcessor {
           response.type === 'existing'
           && response.categoryId
           && transaction.payee
+          && !this.ruledPayees.has(transaction.payee)
           && response.confidence !== undefined
           && response.confidence >= this.autoRuleThreshold
         ) {
+          this.ruledPayees.add(transaction.payee);
           try {
             await this.actualApiService.createPayeeRule(
               transaction.payee,
