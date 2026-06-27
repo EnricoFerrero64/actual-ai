@@ -55,6 +55,29 @@ describe('RateLimiter', () => {
       // This implicitly tests waitIfNeeded when count >= limit * 0.8
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Preemptively waiting'));
     });
+
+    it('resets the per-minute counter each window so steady sub-60s traffic never stalls', async () => {
+      // Regression: previously the counter keyed off lastRequestTime and never
+      // reset under a continuous stream, accumulating until it perpetually
+      // triggered ~57s preemptive waits.
+      rateLimiter.setProviderLimit('test-provider', 10);
+      const sleepSpy = jest.spyOn(
+        rateLimiter as unknown as { sleep: (ms: number) => Promise<void> },
+        'sleep',
+      );
+      const operation = jest.fn().mockResolvedValue('success');
+
+      // 30 requests, each 30s apart → at most 2 per 60s window, well under the limit.
+      for (let i = 0; i < 30; i++) {
+        jest.setSystemTime(i * 30000);
+        // eslint-disable-next-line no-await-in-loop
+        await rateLimiter.executeWithRateLimiting('test-provider', operation);
+      }
+
+      expect(operation).toHaveBeenCalledTimes(30);
+      // With the window reset, the limit is never approached → never waits.
+      expect(sleepSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe('executeWithRateLimiting', () => {

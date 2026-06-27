@@ -23,6 +23,9 @@ class RateLimiter {
 
   private lastRequestTime = new Map<string, number>();
 
+  // Start of the current fixed 60s counting window, per provider.
+  private requestWindowStart = new Map<string, number>();
+
   private maxRequestsPerMinute = new Map<string, number>();
 
   private tokenBuckets = new Map<string, TokenBucket>();
@@ -228,10 +231,14 @@ class RateLimiter {
   private trackRequest(provider: string): void {
     const now = Date.now();
     const count = this.requestCounts.get(provider) ?? 0;
-    const lastTime = this.lastRequestTime.get(provider) ?? 0;
+    const windowStart = this.requestWindowStart.get(provider) ?? 0;
 
-    // Reset counter if more than a minute has passed
-    if (now - lastTime > 60000) {
+    // Fixed-window: reset the counter once the current 60s window has elapsed.
+    // Keyed on the window START (not the last request) — otherwise a steady
+    // stream of sub-60s-spaced requests never resets and the counter grows
+    // unbounded, eventually triggering perpetual preemptive waits.
+    if (now - windowStart >= 60000) {
+      this.requestWindowStart.set(provider, now);
       this.requestCounts.set(provider, 1);
     } else {
       this.requestCounts.set(provider, count + 1);
@@ -243,7 +250,7 @@ class RateLimiter {
   private async waitIfNeeded(provider: string): Promise<void> {
     const limit = this.maxRequestsPerMinute.get(provider) ?? 0;
     const count = this.requestCounts.get(provider) ?? 0;
-    const lastTime = this.lastRequestTime.get(provider) ?? 0;
+    const windowStart = this.requestWindowStart.get(provider) ?? Date.now();
     const now = Date.now();
     let waitTime = 0;
 
@@ -259,12 +266,13 @@ class RateLimiter {
       }
     }
 
-    // If we have a request limit set and we're approaching it
+    // If we have a request limit set and we're approaching it, wait until the
+    // current window ends. Based on the window START so the wait is "time left
+    // in this window", not a near-full minute.
     if (limit && count >= limit * 0.8) {
-      // If less than a minute has passed since the first request in this window
-      if (now - lastTime < 60000) {
-        // Calculate time remaining until the minute is up
-        waitTime = 60000 - (now - lastTime) + 100; // add 100ms buffer
+      const elapsed = now - windowStart;
+      if (elapsed < 60000) {
+        waitTime = 60000 - elapsed + 100; // add 100ms buffer
         console.log(`Preemptively waiting ${waitTime}ms to avoid rate limit for ${provider}`);
         await this.sleep(waitTime);
       }
