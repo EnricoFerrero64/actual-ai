@@ -23,6 +23,7 @@ class PromptGenerator implements PromptGeneratorI {
     payees: APIPayeeEntity[],
     rules: RuleEntity[],
     searchContext?: string,
+    pendingCategories?: string[],
   ): string {
     let template;
     try {
@@ -62,6 +63,9 @@ class PromptGenerator implements PromptGeneratorI {
         reconciled: transaction.reconciled,
         hasWebSearchTool: webSearchEnabled,
         searchContext: searchContext ?? '',
+        pendingCategories: pendingCategories && pendingCategories.length > 0
+          ? pendingCategories
+          : null,
       });
     } catch {
       console.error('Error generating prompt. Check syntax of your template.');

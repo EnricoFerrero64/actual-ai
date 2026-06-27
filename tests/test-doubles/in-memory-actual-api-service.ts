@@ -180,12 +180,21 @@ export default class InMemoryActualApiService implements ActualApiServiceI {
     return Promise.resolve([]);
   }
 
+  public createdPayeeRules: {
+    payeeId: string | undefined;
+    importedPayeeName: string;
+    categoryId: string;
+  }[] = [];
+
   async createPayeeRule(
-    _payeeId: string | undefined,
-    _importedPayeeName: string,
-    _categoryId: string,
+    payeeId: string | undefined,
+    importedPayeeName: string,
+    categoryId: string,
   ): Promise<void> {
-    // no-op in tests
+    if (this.isDryRun) {
+      return;
+    }
+    this.createdPayeeRules.push({ payeeId, importedPayeeName, categoryId });
   }
 
   setRules(rules: RuleEntity[]): void {

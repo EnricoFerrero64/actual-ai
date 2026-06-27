@@ -51,11 +51,21 @@ export const searchConfidenceThreshold = Number.isFinite(parsedConfidenceThresho
   ? Math.min(1, Math.max(0, parsedConfidenceThreshold))
   : 0.6;
 
-// Auto-rule creation — create Actual Budget rules for high-confidence classifications
+// Auto-rule creation — create Actual Budget rules for high-confidence classifications.
+// Lower bound clamped to 0; NO upper clamp, so a value > 1 (e.g. "2") disables it.
 const parsedAutoRuleThreshold = parseFloat(process.env.AUTO_RULE_CONFIDENCE_THRESHOLD ?? '');
 export const autoRuleConfidenceThreshold = Number.isFinite(parsedAutoRuleThreshold)
-  ? Math.min(1, Math.max(0, parsedAutoRuleThreshold))
+  ? Math.max(0, parsedAutoRuleThreshold)
   : 0.9;
+export const autoRuleEnabled = autoRuleConfidenceThreshold <= 1;
+
+// New-category creation — minimum confidence required before a `type: 'new'`
+// suggestion is accepted. Below this, the transaction is treated as a miss
+// (tagged not-guessed) instead of spawning a junk category.
+const parsedNewCategoryThreshold = parseFloat(process.env.NEW_CATEGORY_CONFIDENCE_THRESHOLD ?? '');
+export const newCategoryConfidenceThreshold = Number.isFinite(parsedNewCategoryThreshold)
+  ? Math.min(1, Math.max(0, parsedNewCategoryThreshold))
+  : 0.5;
 
 // Parallel classification — number of transactions processed concurrently
 const parsedConcurrency = parseInt(process.env.CLASSIFICATION_CONCURRENCY ?? '', 10);

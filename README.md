@@ -17,6 +17,76 @@ for [Actual Budget](https://actualbudget.org/)
 using [OpenAI](https://openai.com/api/pricing/), [Anthropic](https://www.anthropic.com/pricing#anthropic-api), [Google Generative AI](https://ai.google/discover/generativeai/), [Ollama](https://github.com/ollama/ollama)
 or any other compatible API (including OpenRouter).
 
+---
+
+## 🛠️ Jarvis fork enhancements
+
+This fork adds a **confidence-driven** classification pipeline on top of upstream:
+
+- **Confidence scoring** — the model emits a `confidence` (0.0–1.0) with every classification.
+- **Self-hosted search enrichment** — when confidence is low (or a transaction was previously missed),
+  the merchant is looked up via **SearXNG** (JSON API) and, optionally, scraped via **Firecrawl**.
+  The results are injected into the prompt and the transaction is re-classified. No model tool-calling
+  required, so it works with plain-JSON-only models.
+- **Payee cache** — identical payees are classified once per run and reused (fewer LLM calls,
+  consistent results).
+- **Auto-rule creation** — high-confidence classifications create a native Actual Budget rule
+  (keyed on the stable payee id), so future runs skip the LLM entirely for known payees.
+- **New-category gating** — low-confidence `new` suggestions are tagged as misses instead of
+  spawning junk categories; suggestions that duplicate existing categories are collapsed onto them
+  (their transactions are reassigned, never orphaned).
+- **Parallel processing** — configurable transaction concurrency.
+
+### Pipeline
+
+```mermaid
+flowchart TD
+    A[Actual Budget API] -->|transactions, rules, payees, categories| B[TransactionFilterer]
+    B -->|skip categorized / transfers / off-budget / no-payee| C[Uncategorized txs]
+    C --> D[BatchTransactionProcessor\nconcurrency = N]
+
+    D --> E{Payee cache hit?}
+    E -->|yes| L[Reuse cached response]
+    E -->|no| G[PromptGenerator\n+ pending categories this run]
+    G --> H[LLM call #1]
+    H --> I{confidence below threshold\nOR previously missed?}
+    I -->|yes + search available| J[SearXNG search\n+ optional Firecrawl scrape]
+    J --> K[LLM call #2 with context]
+    I -->|no| L
+    K --> L
+
+    L --> M{response type?}
+    M -->|existing| N[Assign category]
+    M -->|rule| O[Apply rule]
+    M -->|new| P{suggestNewCategories on\nAND confidence ok?}
+    P -->|no| Q[Tag as miss]
+    P -->|yes| R[Accumulate suggestion]
+
+    N --> S{confidence >= autoRule\nAND stable payee id?}
+    S -->|yes| T[Create Actual Budget rule]
+
+    R --> U[After all txs:\nCategorySuggester]
+    U --> V{similar to existing category?}
+    V -->|yes| W[Collapse + reassign txs]
+    V -->|no| X[Create category + assign]
+    W --> Y[Optional auto-rule]
+    X --> Y
+```
+
+### Fork-specific environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SEARXNG_URL` | _(empty)_ | Base URL of a SearXNG instance. Enables search enrichment when set. |
+| `SEARCH_CONFIDENCE_THRESHOLD` | `0.6` | Below this confidence, enrich with web search and re-classify. |
+| `FIRECRAWL_URL` | _(empty)_ | Optional Firecrawl base URL; scrapes the top result when SearXNG snippets are too thin. |
+| `FIRECRAWL_API_KEY` | _(empty)_ | Optional Firecrawl bearer token. |
+| `AUTO_RULE_CONFIDENCE_THRESHOLD` | `0.9` | At/above this confidence, create an Actual Budget rule. Set `> 1` to disable. |
+| `NEW_CATEGORY_CONFIDENCE_THRESHOLD` | `0.5` | Minimum confidence to accept a new-category suggestion; below it the transaction is a miss. |
+| `CLASSIFICATION_CONCURRENCY` | `1` | Number of transactions classified in parallel. |
+
+---
+
 ## 🌟 Features
 
 #### 📊 Classify transactions using LLM

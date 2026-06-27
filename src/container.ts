@@ -8,6 +8,7 @@ import {
   anthropicBaseURL,
   anthropicModel,
   autoRuleConfidenceThreshold,
+  autoRuleEnabled,
   budgetId,
   classificationConcurrency,
   dataDir,
@@ -15,6 +16,7 @@ import {
   firecrawlApiKey,
   firecrawlUrl,
   getEnabledTools,
+  newCategoryConfidenceThreshold,
   googleApiKey,
   googleBaseURL,
   googleModel,
@@ -139,6 +141,7 @@ const categorySuggester = new CategorySuggester(
   actualApiService,
   new CategorySuggestionOptimizer(new SimilarityCalculator()),
   tagService,
+  autoRuleEnabled,
 );
 
 const newCategoryStrategy = new NewCategoryStrategy();
@@ -153,8 +156,10 @@ if (searxngUrl) {
   console.log('[SearchEnrichment] SearXNG not configured (set SEARXNG_URL to enable)');
 }
 
-if (autoRuleConfidenceThreshold <= 1) {
+if (autoRuleEnabled) {
   console.log(`[AutoRule] Enabled — creating rules for classifications with confidence ≥ ${autoRuleConfidenceThreshold}`);
+} else {
+  console.log('[AutoRule] Disabled (AUTO_RULE_CONFIDENCE_THRESHOLD > 1)');
 }
 if (classificationConcurrency > 1) {
   console.log(`[Parallel] Processing ${classificationConcurrency} transactions concurrently`);
@@ -166,9 +171,12 @@ const transactionProcessor = new TransactionProcessor(
   promptGenerator,
   tagService,
   [ruleMatchStrategy, existingCategoryStrategy, newCategoryStrategy],
-  searchEnrichment,
-  searchConfidenceThreshold,
-  autoRuleConfidenceThreshold,
+  {
+    searchEnrichment,
+    confidenceThreshold: searchConfidenceThreshold,
+    autoRuleThreshold: autoRuleConfidenceThreshold,
+    newCategoryConfidenceThreshold,
+  },
 );
 
 const batchTransactionProcessor = new BatchTransactionProcessor(

@@ -4,6 +4,14 @@ import { APICategoryGroupEntity } from '../types';
 import CategorySuggestionOptimizer from '../category-suggestion-optimizer';
 import TagService from './tag-service';
 
+function cleanPayeeName(raw: string): string {
+  return raw
+    .replace(/^(Facture Carte Du \d{6}|Prlv Sepa|Virement Sepa?|Retrait Dab \S+)\s+/i, '')
+    .replace(/Carte \d{4}x+\d+.*$/i, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 class CategorySuggester {
   private readonly actualApiService: ActualApiServiceI;
 
@@ -11,14 +19,21 @@ class CategorySuggester {
 
   private readonly tagService: TagService;
 
+  private readonly autoRuleEnabled: boolean;
+
+  // Payee ids we've already created a rule for — avoids duplicate rules
+  private readonly ruledPayees = new Set<string>();
+
   constructor(
     actualApiService: ActualApiServiceI,
     categorySuggestionOptimizer: CategorySuggestionOptimizer,
     tagService: TagService,
+    autoRuleEnabled = false,
   ) {
     this.actualApiService = actualApiService;
     this.categorySuggestionOptimizer = categorySuggestionOptimizer;
     this.tagService = tagService;
+    this.autoRuleEnabled = autoRuleEnabled;
   }
 
   public async suggest(
@@ -32,10 +47,34 @@ class CategorySuggester {
     uncategorizedTransactions: TransactionEntity[],
     categoryGroups: APICategoryGroupEntity[],
   ): Promise<void> {
-    // Filter out suggestions that duplicate existing categories (semantic similarity)
-    const existingNames = categoryGroups.flatMap((g) => (g.categories ?? []).map((c) => c.name));
-    const deduped = this.categorySuggestionOptimizer
-      .filterAgainstExistingCategories(suggestedCategories, existingNames);
+    // Collapse suggestions that duplicate existing categories (semantic similarity).
+    // Their transactions are reassigned to the existing category, not dropped.
+    const existingCategories = categoryGroups.flatMap(
+      (g) => (g.categories ?? []).map((c) => ({ id: c.id, name: c.name })),
+    );
+    const { filtered: deduped, reassignments } = this.categorySuggestionOptimizer
+      .filterAgainstExistingCategories(suggestedCategories, existingCategories);
+
+    // Apply reassignments onto existing categories (Bug fix: no orphan transactions)
+    if (reassignments.length > 0) {
+      console.log(`Reassigning ${reassignments.length} transaction(s) to existing categories`);
+      await Promise.all(
+        reassignments.map(async ({ transaction, categoryId, categoryName }) => {
+          try {
+            await this.actualApiService.updateTransactionNotesAndCategory(
+              transaction.id,
+              this.tagService.addGuessedTag(transaction.notes ?? ''),
+              categoryId,
+            );
+            if (this.autoRuleEnabled && transaction.payee) {
+              await this.maybeCreateRule(transaction, categoryId, categoryName);
+            }
+          } catch (error) {
+            console.error(`Error reassigning transaction ${transaction.id}:`, error);
+          }
+        }),
+      );
+    }
 
     // Optimize (cluster similar suggestions within the run)
     const optimizedCategories = this.categorySuggestionOptimizer
@@ -95,6 +134,10 @@ class CategorySuggester {
                 newCategoryId,
               );
               console.log(`Assigned transaction ${transaction.id} to new category ${suggestion.name}`);
+              // Auto-rule: future runs skip the LLM for this payee → new category
+              if (this.autoRuleEnabled && transaction.payee) {
+                await this.maybeCreateRule(transaction, newCategoryId, suggestion.name);
+              }
             }),
           );
         } catch (error) {
@@ -102,6 +145,27 @@ class CategorySuggester {
         }
       }),
     );
+  }
+
+  private async maybeCreateRule(
+    transaction: TransactionEntity,
+    categoryId: string,
+    categoryName: string,
+  ): Promise<void> {
+    if (!transaction.payee || this.ruledPayees.has(transaction.payee)) {
+      return;
+    }
+    this.ruledPayees.add(transaction.payee);
+    try {
+      await this.actualApiService.createPayeeRule(
+        transaction.payee,
+        cleanPayeeName(transaction.imported_payee ?? ''),
+        categoryId,
+      );
+      console.log(`[AutoRule] Created rule for payee of tx ${transaction.id} → "${categoryName}"`);
+    } catch (err) {
+      console.warn(`[AutoRule] Could not create rule for tx ${transaction.id}:`, err);
+    }
   }
 }
 

@@ -124,6 +124,7 @@ export interface PromptGeneratorI {
     payees: APIPayeeEntity[],
     rules: RuleEntity[],
     searchContext?: string,
+    pendingCategories?: string[],
   ): string;
 }
 

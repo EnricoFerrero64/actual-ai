@@ -3,8 +3,25 @@ import type {
 } from '@actual-app/core/src/types/models';
 import SimilarityCalculator from './similarity-calculator';
 
-// Suggestions are dropped when they're this similar to an existing category name
+// Suggestions collapse onto an existing category when their names are at least this similar
 const EXISTING_CATEGORY_SIMILARITY_THRESHOLD = 0.75;
+
+export interface CategoryReassignment {
+  transaction: TransactionEntity;
+  categoryId: string;
+  categoryName: string;
+}
+
+export interface FilterAgainstExistingResult {
+  filtered: Map<string, {
+    name: string;
+    groupName: string;
+    groupIsNew: boolean;
+    groupId?: string;
+    transactions: TransactionEntity[];
+  }>;
+  reassignments: CategoryReassignment[];
+}
 
 class CategorySuggestionOptimizer {
   private readonly similarityCalculator: SimilarityCalculator;
@@ -16,8 +33,10 @@ class CategorySuggestionOptimizer {
   }
 
   /**
-   * Remove suggestions that are too similar to already-existing category names,
-   * to prevent category bloat across runs.
+   * Collapse suggestions that are too similar to already-existing categories.
+   * Instead of dropping them (which would orphan their transactions), the
+   * transactions are returned as reassignments onto the existing category,
+   * preventing both category bloat AND uncategorized leftovers.
    */
   public filterAgainstExistingCategories(
     suggestedCategories: Map<string, {
@@ -27,28 +46,32 @@ class CategorySuggestionOptimizer {
       groupId?: string;
       transactions: TransactionEntity[];
     }>,
-    existingCategoryNames: string[],
-  ): Map<string, {
-      name: string;
-      groupName: string;
-      groupIsNew: boolean;
-      groupId?: string;
-      transactions: TransactionEntity[];
-    }> {
-    if (!existingCategoryNames.length) return suggestedCategories;
+    existingCategories: { id: string; name: string }[],
+  ): FilterAgainstExistingResult {
+    if (!existingCategories.length) {
+      return { filtered: suggestedCategories, reassignments: [] };
+    }
 
     const filtered = new Map(suggestedCategories);
+    const reassignments: CategoryReassignment[] = [];
+
     for (const [key, suggestion] of filtered.entries()) {
-      const match = existingCategoryNames.find((existing) => {
-        const sim = this.similarityCalculator.calculateNameSimilarity(suggestion.name, existing);
-        return sim >= EXISTING_CATEGORY_SIMILARITY_THRESHOLD;
-      });
-      if (match) {
-        console.log(`[CategoryOptimizer] Dropping suggestion "${suggestion.name}" — too similar to existing category "${match}"`);
+      let best: { id: string; name: string; sim: number } | undefined;
+      for (const existing of existingCategories) {
+        const sim = this.similarityCalculator.calculateNameSimilarity(suggestion.name, existing.name);
+        if (sim >= EXISTING_CATEGORY_SIMILARITY_THRESHOLD && (!best || sim > best.sim)) {
+          best = { id: existing.id, name: existing.name, sim };
+        }
+      }
+      if (best) {
+        console.log(`[CategoryOptimizer] Collapsing suggestion "${suggestion.name}" onto existing "${best.name}" (sim ${best.sim.toFixed(2)}) — reassigning ${suggestion.transactions.length} transaction(s)`);
+        suggestion.transactions.forEach((transaction) => {
+          reassignments.push({ transaction, categoryId: best!.id, categoryName: best!.name });
+        });
         filtered.delete(key);
       }
     }
-    return filtered;
+    return { filtered, reassignments };
   }
 
   public optimizeCategorySuggestions(

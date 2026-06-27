@@ -31,6 +31,13 @@ Existing Rules:
 {{/each}}
 {{/if}}
 
+{{#if pendingCategories}}
+Categories already suggested earlier in THIS run (prefer reusing one of these via a "new" suggestion with the EXACT same name, instead of inventing another variant):
+{{#each pendingCategories}}
+* {{this}}
+{{/each}}
+
+{{/if}}
 {{#if searchContext}}
 MERCHANT RESEARCH (use this to improve accuracy):
 {{searchContext}}

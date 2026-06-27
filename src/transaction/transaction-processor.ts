@@ -10,6 +10,7 @@ import {
   SearchEnrichmentServiceI,
   UnifiedResponse,
 } from '../types';
+import { isFeatureEnabled } from '../config';
 import TagService from './tag-service';
 
 function cleanPayeeName(raw: string): string {
@@ -18,6 +19,13 @@ function cleanPayeeName(raw: string): string {
     .replace(/Carte \d{4}x+\d+.*$/i, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
+}
+
+export interface TransactionProcessorOptions {
+  searchEnrichment?: SearchEnrichmentServiceI;
+  confidenceThreshold?: number;
+  autoRuleThreshold?: number;
+  newCategoryConfidenceThreshold?: number;
 }
 
 class TransactionProcessor {
@@ -37,6 +45,8 @@ class TransactionProcessor {
 
   private readonly autoRuleThreshold: number;
 
+  private readonly newCategoryConfidenceThreshold: number;
+
   // In-memory payee cache: normalized payee name → response
   private readonly payeeCache = new Map<string, UnifiedResponse>();
 
@@ -46,18 +56,17 @@ class TransactionProcessor {
     promptGenerator: PromptGeneratorI,
     tagService: TagService,
     processingStrategies: ProcessingStrategyI[],
-    searchEnrichment?: SearchEnrichmentServiceI,
-    confidenceThreshold = 0.6,
-    autoRuleThreshold = 0.9,
+    options: TransactionProcessorOptions = {},
   ) {
     this.actualApiService = actualApiClient;
     this.llmService = llmService;
     this.promptGenerator = promptGenerator;
     this.tagService = tagService;
     this.processingStrategies = processingStrategies;
-    this.searchEnrichment = searchEnrichment;
-    this.confidenceThreshold = confidenceThreshold;
-    this.autoRuleThreshold = autoRuleThreshold;
+    this.searchEnrichment = options.searchEnrichment;
+    this.confidenceThreshold = options.confidenceThreshold ?? 0.6;
+    this.autoRuleThreshold = options.autoRuleThreshold ?? 0.9;
+    this.newCategoryConfidenceThreshold = options.newCategoryConfidenceThreshold ?? 0.5;
   }
 
   public async process(
@@ -93,11 +102,18 @@ class TransactionProcessor {
       // --- Determine if this is a previously missed transaction ---
       const isPreviousMiss = this.tagService.isNotGuessed(transaction.notes ?? '');
 
+      // Pending categories suggested earlier in this run, so the model can reuse them
+      const pendingCategories = Array.from(
+        new Set(Array.from(suggestedCategories.values()).map((s) => s.name)),
+      );
+
       const prompt = this.promptGenerator.generate(
         categoryGroups,
         transaction,
         payees,
         rules,
+        undefined,
+        pendingCategories,
       );
 
       let response: UnifiedResponse = await this.llmService.ask(prompt);
@@ -123,11 +139,30 @@ class TransactionProcessor {
               payees,
               rules,
               searchContext,
+              pendingCategories,
             );
             const enrichedResponse = await this.llmService.ask(enrichedPrompt);
             console.log(`[TransactionProcessor] After enrichment: confidence=${enrichedResponse.confidence?.toFixed(2) ?? 'n/a'}, type=${enrichedResponse.type}`);
             response = enrichedResponse;
           }
+        }
+      }
+
+      // --- Gate new-category suggestions ---
+      if (response.type === 'new') {
+        if (!isFeatureEnabled('suggestNewCategories')) {
+          // Feature off: don't silently drop — tag as miss so it's visible & retryable
+          console.log('[TransactionProcessor] "new" suggestion but suggestNewCategories disabled → tagging as miss');
+          await this.markAsMiss(transaction);
+          return;
+        }
+        if (
+          response.confidence !== undefined
+          && response.confidence < this.newCategoryConfidenceThreshold
+        ) {
+          console.log(`[TransactionProcessor] "new" suggestion confidence ${response.confidence.toFixed(2)} < ${this.newCategoryConfidenceThreshold} → tagging as miss instead of creating junk category`);
+          await this.markAsMiss(transaction);
+          return;
         }
       }
 
@@ -142,15 +177,20 @@ class TransactionProcessor {
         }
 
         // --- Auto-rule creation for high-confidence existing category ---
+        // Only when a stable payee entity id exists. Falling back to an
+        // `imported_payee contains` rule on raw bank strings (which embed
+        // unique transaction refs/dates) would create rules that never match
+        // future transactions yet bloat every prompt — so we skip those.
         if (
           response.type === 'existing'
           && response.categoryId
+          && transaction.payee
           && response.confidence !== undefined
           && response.confidence >= this.autoRuleThreshold
         ) {
           try {
             await this.actualApiService.createPayeeRule(
-              transaction.payee ?? undefined,
+              transaction.payee,
               cleanPayeeName(rawPayeeName),
               response.categoryId,
             );
@@ -165,17 +205,18 @@ class TransactionProcessor {
       }
 
       console.warn(`Unexpected response format: ${JSON.stringify(response)}`);
-      await this.actualApiService.updateTransactionNotes(
-        transaction.id,
-        this.tagService.addNotGuessedTag(transaction.notes ?? ''),
-      );
+      await this.markAsMiss(transaction);
     } catch (error) {
       console.error(`Error processing transaction ${transaction.id}:`, error);
-      await this.actualApiService.updateTransactionNotes(
-        transaction.id,
-        this.tagService.addNotGuessedTag(transaction.notes ?? ''),
-      );
+      await this.markAsMiss(transaction);
     }
+  }
+
+  private async markAsMiss(transaction: TransactionEntity): Promise<void> {
+    await this.actualApiService.updateTransactionNotes(
+      transaction.id,
+      this.tagService.addNotGuessedTag(transaction.notes ?? ''),
+    );
   }
 }
 
