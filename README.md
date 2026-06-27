@@ -37,42 +37,6 @@ This fork adds a **confidence-driven** classification pipeline on top of upstrea
   (their transactions are reassigned, never orphaned).
 - **Parallel processing** — configurable transaction concurrency.
 
-### Pipeline
-
-```mermaid
-flowchart TD
-    A[Actual Budget API] -->|transactions, rules, payees, categories| B[TransactionFilterer]
-    B -->|skip categorized / transfers / off-budget / no-payee| C[Uncategorized txs]
-    C --> D[BatchTransactionProcessor\nconcurrency = N]
-
-    D --> E{Payee cache hit?}
-    E -->|yes| L[Reuse cached response]
-    E -->|no| G[PromptGenerator\n+ pending categories this run]
-    G --> H[LLM call #1]
-    H --> I{confidence below threshold\nOR previously missed?}
-    I -->|yes + search available| J[SearXNG search\n+ optional Firecrawl scrape]
-    J --> K[LLM call #2 with context]
-    I -->|no| L
-    K --> L
-
-    L --> M{response type?}
-    M -->|existing| N[Assign category]
-    M -->|rule| O[Apply rule]
-    M -->|new| P{suggestNewCategories on\nAND confidence ok?}
-    P -->|no| Q[Tag as miss]
-    P -->|yes| R[Accumulate suggestion]
-
-    N --> S{confidence >= autoRule\nAND stable payee id?}
-    S -->|yes| T[Create Actual Budget rule]
-
-    R --> U[After all txs:\nCategorySuggester]
-    U --> V{similar to existing category?}
-    V -->|yes| W[Collapse + reassign txs]
-    V -->|no| X[Create category + assign]
-    W --> Y[Optional auto-rule]
-    X --> Y
-```
-
 ### Fork-specific environment variables
 
 | Variable | Default | Description |

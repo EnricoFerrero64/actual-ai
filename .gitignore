@@ -4,3 +4,6 @@ dist/
 
 .env
 *.log
+
+# codegraph local index (not part of the fork)
+.codegraph/
